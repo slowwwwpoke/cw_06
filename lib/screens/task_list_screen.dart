@@ -1,141 +1,148 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../models/task_model.dart';
 import '../services/firebase_service.dart';
 import '../widgets/task_tile.dart';
 
 class TaskListScreen extends StatefulWidget {
   @override
-  State<TaskListScreen> createState() => _TaskListScreenState();
+  _TaskListScreenState createState() => _TaskListScreenState();
 }
 
 class _TaskListScreenState extends State<TaskListScreen> {
   final FirebaseService _firebaseService = FirebaseService();
+
+  final String _userId = 'test_user'; // Replace with actual user auth later
+  List<Task> _tasks = [];
+
   final TextEditingController _taskController = TextEditingController();
+  final TextEditingController _detailsController = TextEditingController();
 
-  String _priority = 'Medium';
-  DateTime? _dueDate;
-
-  String _sortOption = 'None';
-  String _filterPriority = 'All';
-  bool _showCompleted = false;
-
-  List<Task> _applyFilters(List<Task> tasks) {
-    var list = tasks;
-
-    if (_filterPriority != 'All') {
-      list = list.where((t) => t.priority == _filterPriority).toList();
-    }
-    if (_showCompleted) {
-      list = list.where((t) => t.isCompleted).toList();
-    }
-
-    if (_sortOption == 'Priority') {
-      list.sort((a, b) => _priorityToInt(a.priority).compareTo(_priorityToInt(b.priority)));
-    } else if (_sortOption == 'Due Date') {
-      list.sort((a, b) => (a.dueDate ?? DateTime(2100)).compareTo(b.dueDate ?? DateTime(2100)));
-    } else if (_sortOption == 'Completion') {
-      list.sort((a, b) => (a.isCompleted ? 1 : 0).compareTo(b.isCompleted ? 1 : 0));
-    }
-
-    return list;
+  @override
+  void initState() {
+    super.initState();
+    _loadTasks();
   }
 
-  int _priorityToInt(String p) {
-    switch (p) {
-      case 'High': return 0;
-      case 'Medium': return 1;
-      case 'Low': return 2;
-      default: return 3;
-    }
+  Future<void> _loadTasks() async {
+    final tasks = await _firebaseService.fetchTasks(_userId);
+    setState(() {
+      _tasks = tasks;
+    });
   }
 
-  void _addTask() {
-    if (_taskController.text.trim().isEmpty) return;
-
+  Future<void> _addTask() async {
+    if (_taskController.text.isEmpty) return;
     final newTask = Task(
-      id: '',
-      name: _taskController.text.trim(),
-      isCompleted: false,
-      priority: _priority,
-      dueDate: _dueDate,
-      subtasks: [],
+      title: _taskController.text,
+      details: _detailsController.text,
     );
-    _firebaseService.addTask(newTask);
+    await _firebaseService.addTask(_userId, newTask);
     _taskController.clear();
-    _dueDate = null;
-    _priority = 'Medium';
-    setState(() {});
+    _detailsController.clear();
+    _loadTasks();
+  }
+
+  Future<void> _addSubtask(Task parentTask) async {
+    final TextEditingController subtaskController = TextEditingController();
+    final TextEditingController subDetailsController = TextEditingController();
+
+    await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('Add Subtask'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: subtaskController,
+              decoration: InputDecoration(labelText: 'Subtask title'),
+            ),
+            TextField(
+              controller: subDetailsController,
+              decoration: InputDecoration(labelText: 'Subtask details'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            child: Text('Cancel'),
+            onPressed: Navigator.of(context).pop,
+          ),
+          ElevatedButton(
+            child: Text('Add'),
+            onPressed: () async {
+              final subtask = Task(
+                title: subtaskController.text,
+                details: subDetailsController.text,
+              );
+              await _firebaseService.addSubtask(_userId, parentTask.id!, subtask);
+              Navigator.of(context).pop();
+              _loadTasks();
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('Task Manager')),
-      body: Column(
+      body: ListView(
+        padding: EdgeInsets.all(16),
         children: [
-          Padding(
-            padding: EdgeInsets.all(8),
-            child: Column(
-              children: [
-                TextField(controller: _taskController, decoration: InputDecoration(labelText: 'Task Name')),
-                Row(
-                  children: [
-                    DropdownButton<String>(
-                      value: _priority,
-                      onChanged: (val) => setState(() => _priority = val!),
-                      items: ['High', 'Medium', 'Low'].map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
-                    ),
-                    SizedBox(width: 10),
-                    TextButton(
-                      onPressed: () async {
-                        final date = await showDatePicker(
-                          context: context,
-                          initialDate: DateTime.now(),
-                          firstDate: DateTime(2020),
-                          lastDate: DateTime(2100),
-                        );
-                        if (date != null) setState(() => _dueDate = date);
-                      },
-                      child: Text(_dueDate == null ? 'Pick Date' : DateFormat.yMd().format(_dueDate!)),
-                    ),
-                    Spacer(),
-                    ElevatedButton(onPressed: _addTask, child: Text('Add')),
-                  ],
-                ),
-              ],
-            ),
+          TextField(
+            controller: _taskController,
+            decoration: InputDecoration(labelText: 'Task title'),
+          ),
+          TextField(
+            controller: _detailsController,
+            decoration: InputDecoration(labelText: 'Task details'),
+          ),
+          SizedBox(height: 8),
+          ElevatedButton(
+            onPressed: _addTask,
+            child: Text('Add Task'),
           ),
           Divider(),
-          Row(
-            children: [
-              DropdownButton<String>(
-                value: _sortOption,
-                onChanged: (val) => setState(() => _sortOption = val!),
-                items: ['None', 'Priority', 'Due Date', 'Completion'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-              ),
-              DropdownButton<String>(
-                value: _filterPriority,
-                onChanged: (val) => setState(() => _filterPriority = val!),
-                items: ['All', 'High', 'Medium', 'Low'].map((f) => DropdownMenuItem(value: f, child: Text(f))).toList(),
-              ),
-              Checkbox(value: _showCompleted, onChanged: (val) => setState(() => _showCompleted = val!)),
-              Text("Completed"),
-            ],
-          ),
-          Expanded(
-            child: StreamBuilder<List<Task>>(
-              stream: _firebaseService.getTasks(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) return Center(child: CircularProgressIndicator());
-                final tasks = _applyFilters(snapshot.data!);
-                return ListView.builder(
-                  itemCount: tasks.length,
-                  itemBuilder: (context, i) => TaskTile(task: tasks[i], firebaseService: _firebaseService),
-                );
-              },
-            ),
-          ),
+          ..._tasks.map((task) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TaskTile(
+                  task: task,
+                  onChanged: (val) async {
+                    task.isDone = val!;
+                    await _firebaseService.updateTask(_userId, task);
+                    _loadTasks();
+                  },
+                  onDelete: () async {
+                    await _firebaseService.deleteTask(_userId, task.id!);
+                    _loadTasks();
+                  },
+                  onAddSubtask: () => _addSubtask(task),
+                ),
+                ...task.subtasks.map((subtask) => Padding(
+                      padding: EdgeInsets.only(left: 32),
+                      child: TaskTile(
+                        task: subtask,
+                        isSubtask: true,
+                        onChanged: (val) async {
+                          subtask.isDone = val!;
+                          await _firebaseService.updateSubtask(_userId, task.id!, subtask);
+                          _loadTasks();
+                        },
+                        onDelete: () async {
+                          await _firebaseService.deleteSubtask(_userId, task.id!, subtask.id!);
+                          _loadTasks();
+                        },
+                      ),
+                    )),
+                Divider(),
+              ],
+            );
+          }),
         ],
       ),
     );

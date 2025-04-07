@@ -1,49 +1,48 @@
 import 'package:flutter/material.dart';
 import '../models/task_model.dart';
-import '../services/firebase_service.dart';
 
 class TaskTile extends StatelessWidget {
   final Task task;
-  final FirebaseService firebaseService;
+  final bool isSubtask;
+  final Function(bool?)? onChanged;
+  final VoidCallback? onDelete;
+  final VoidCallback? onAddSubtask;
 
-  const TaskTile({super.key, required this.task, required this.firebaseService});
-
-  Color _priorityColor(String p) {
-    switch (p) {
-      case 'High': return Colors.red;
-      case 'Medium': return Colors.orange;
-      case 'Low': return Colors.green;
-      default: return Colors.grey;
-    }
-  }
+  const TaskTile({
+    required this.task,
+    this.isSubtask = false,
+    this.onChanged,
+    this.onDelete,
+    this.onAddSubtask,
+  });
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
       leading: Checkbox(
-        value: task.isCompleted,
-        onChanged: (val) {
-          firebaseService.updateTask(task..isCompleted = val!);
-        },
+        value: task.isDone,
+        onChanged: onChanged,
       ),
-      title: Row(
+      title: Text(
+        task.title,
+        style: TextStyle(
+          decoration: task.isDone ? TextDecoration.lineThrough : null,
+        ),
+      ),
+      subtitle: task.details.isNotEmpty ? Text(task.details) : null,
+      trailing: Wrap(
+        spacing: 8,
         children: [
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: _priorityColor(task.priority),
-              borderRadius: BorderRadius.circular(8),
+          if (!isSubtask)
+            IconButton(
+              icon: Icon(Icons.add),
+              onPressed: onAddSubtask,
             ),
-            child: Text(task.priority, style: TextStyle(color: Colors.white)),
+          IconButton(
+            icon: Icon(Icons.delete),
+            onPressed: onDelete,
           ),
-          SizedBox(width: 8),
-          Expanded(child: Text(task.name)),
         ],
-      ),
-      subtitle: task.dueDate != null ? Text('Due: ${task.dueDate!.toLocal().toString().split(' ')[0]}') : null,
-      trailing: IconButton(
-        icon: Icon(Icons.delete),
-        onPressed: () => firebaseService.deleteTask(task.id),
       ),
     );
   }
